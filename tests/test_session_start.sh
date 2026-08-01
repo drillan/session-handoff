@@ -117,7 +117,7 @@ MD
 # 後ろにある短いセクションが残る」ことを確かめられず、貪欲さのテストが空振りする。
 out=$(printf '{"session_id":"abc00002","cwd":"%s","source":"compact"}' "$cwd" | bash "$SCRIPT")
 chars=$(printf '%s' "$out" | wc -m)
-assert_eq "$([ "$chars" -le 1500 ] && echo ok || echo "over:$chars")" "ok" "出力が 1500 文字以内に収まる"
+assert_eq "$([ "$chars" -le 2500 ] && echo ok || echo "over:$chars")" "ok" "出力が 2500 文字以内に収まる"
 assert_contains "$out" "短い失敗談。" "予算内のセクションは残る"
 assert_not_contains "$out" "あああ" "予算を超えるセクションの本文は入らない"
 assert_contains "$out" "省略: いま何をしているか" "落としたセクション名を明示する"
@@ -136,13 +136,13 @@ out=$(printf '{"session_id":"../etc/passwd","cwd":"%s","source":"compact"}' "$cw
 assert_status "$rc" 1 "session_id がパス脱出を試みても exit 1"
 assert_contains "$out" "session_id" "拒否理由が session_id であることを stderr に出す"
 
-# --- ケース6: 予算のぎりぎりでも 1500 文字を超えない（境界の回帰テスト） ---
+# --- ケース6: 予算のぎりぎりでも 2500 文字を超えない（境界の回帰テスト） ---
 # 2 セクションを大きくして、両方が「収まる／落ちる」の境界近くを通るようにする。
 # 予算計算が省略通知の文字数を差し引き忘れると、この形（大きな本文＋通知）で
-# 1500 文字を超えうる。header/footer の実長は環境（一時ディレクトリのパス長）に
-# 依存するため、固定の文字数ではなく不変条件（1500 文字以内）だけを検証する。
-big1=$(printf 'あ%.0s' $(seq 1300))
-big2=$(printf 'あ%.0s' $(seq 300))
+# 2500 文字を超えうる。header/footer の実長は環境（一時ディレクトリのパス長）に
+# 依存するため、固定の文字数ではなく不変条件（2500 文字以内）だけを検証する。
+big1=$(printf 'あ%.0s' $(seq 2000))
+big2=$(printf 'あ%.0s' $(seq 400))
 cat > "$datadir/abc00003.md" <<MD
 ---
 session_id: abc00003
@@ -162,7 +162,7 @@ MD
 
 out=$(printf '{"session_id":"abc00003","cwd":"%s","source":"compact"}' "$cwd" | bash "$SCRIPT")
 chars=$(printf '%s' "$out" | wc -m)
-assert_eq "$([ "$chars" -le 1500 ] && echo ok || echo "over:$chars")" "ok" "2セクションが境界付近でも 1500 文字を超えない"
+assert_eq "$([ "$chars" -le 2500 ] && echo ok || echo "over:$chars")" "ok" "2セクションが境界付近でも 2500 文字を超えない"
 
 # --- ケース7: /handoff 未実行のスタブに対する結合テスト ---
 # pre-compact.sh が /handoff 未実行のまま作るスタブは、警告を「## いま何をしているか」の
@@ -211,7 +211,9 @@ assert_contains "$out" "全文: $datadir/abc00004.md" "案内行が無くても�
 # 定義順に戻すと、3 つのうち失うと最も高くつくこのセクションが真っ先に落ちる。
 # 実際に 2026-08-01 の compact でそれが起きたので、回帰として固定する。
 # 3 セクションとも同程度に大きくし、貪欲な詰め方で 1 つしか入らない状況を作る。
-fill=$(printf 'あ%.0s' $(seq 900))
+# 各セクションは「予算の半分より大きく、予算以下」でなければ成立しない。
+# MAX_CHARS を変えたらこの fill も見直すこと（2 つ入ってしまうと何も検証しなくなる）。
+fill=$(printf 'あ%.0s' $(seq 1500))
 cat > "$datadir/abc00005.md" <<MD
 ---
 session_id: abc00005
