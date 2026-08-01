@@ -282,6 +282,12 @@ assert_contains "$out" "CLAUDE_PLUGIN_DATA" "data_dir: 未設定の理由を std
 # --- handoff_path ---
 assert_eq "$(CLAUDE_PLUGIN_DATA=/tmp/pd handoff_path /home/driller/foo abc123)" "/tmp/pd/-home-driller-foo/abc123.md" "handoff_path: session_id.md を付ける"
 
+# stderr の中身は直前の data_dir のテストで確認済み。ここは stdout に壊れたパスが
+# 漏れないことだけを見るので stderr を捨てる（失敗の握りつぶしではない）。
+out=$(unset CLAUDE_PLUGIN_DATA; handoff_path /home/driller/foo abc123 2>/dev/null); rc=$?
+assert_status "$rc" 1 "handoff_path: data_dir が失敗したら失敗する"
+assert_eq "$out" "" "handoff_path: 失敗時に壊れたパスを stdout へ出さない"
+
 # --- require_field ---
 json='{"session_id":"abc","cwd":"/home/driller/foo","trigger":"auto"}'
 assert_eq "$(require_field "$json" session_id)" "abc" "require_field: 値を取り出す"
@@ -367,8 +373,13 @@ data_dir() {
 }
 
 # 引き継ぎファイルのパス。
+# data_dir は引数位置のコマンド置換では呼ばない。引数位置だと内部が失敗しても
+# 外側の printf が成功し、終了コード 0 のまま壊れたパスを返してしまう。
+# 単独の代入文にして失敗を明示的に伝播させる。
 handoff_path() {
-  printf '%s/%s.md' "$(data_dir "$1")" "$2"
+  local d
+  d=$(data_dir "$1") || return 1
+  printf '%s/%s.md' "$d" "$2"
 }
 
 # stdin JSON から必須項目を取り出す。欠落・空文字はエラーにする（推測で補わない）。
