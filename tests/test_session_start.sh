@@ -104,22 +104,24 @@ updated_by: handoff-skill
 ---
 
 ## いま何をしているか
-短い現在地。
-
-## 未完了・次の一手
 $long
 
+## 未完了・次の一手
+短い次の一手。
+
 ## 試して駄目だったこと
-これは落とされるはず。
+短い失敗談。
 MD
 
+# 巨大なセクションは INJECT_SECTIONS の 2 番目に置く。最後に置くと「落ちたセクションの
+# 後ろにある短いセクションが残る」ことを確かめられず、貪欲さのテストが空振りする。
 out=$(printf '{"session_id":"abc00002","cwd":"%s","source":"compact"}' "$cwd" | bash "$SCRIPT")
 chars=$(printf '%s' "$out" | wc -m)
 assert_eq "$([ "$chars" -le 1500 ] && echo ok || echo "over:$chars")" "ok" "出力が 1500 文字以内に収まる"
-assert_contains "$out" "短い現在地。" "予算内のセクションは残る"
+assert_contains "$out" "短い失敗談。" "予算内のセクションは残る"
 assert_not_contains "$out" "あああ" "予算を超えるセクションの本文は入らない"
-assert_contains "$out" "省略: 未完了・次の一手" "落としたセクション名を明示する"
-assert_contains "$out" "これは落とされるはず。" "予算超過セクションの後ろでも、収まるセクションは残る（貪欲に詰める）"
+assert_contains "$out" "省略: いま何をしているか" "落としたセクション名を明示する"
+assert_contains "$out" "短い次の一手。" "予算超過セクションの後ろでも、収まるセクションは残る（貪欲に詰める）"
 
 # --- ケース4: 必須項目の欠落 ---
 out=$(printf '{"cwd":"%s","source":"compact"}' "$cwd" | bash "$SCRIPT" 2>&1); rc=$?
@@ -203,5 +205,34 @@ MD
 out=$(printf '{"session_id":"abc00004","cwd":"%s","source":"compact"}' "$cwd" | bash "$SCRIPT")
 assert_not_contains "$out" "は上記ファイルを Read すること" "案内すべきセクションが無ければ案内行自体を出さない（空の括弧を出さない）"
 assert_contains "$out" "全文: $datadir/abc00004.md" "案内行が無くてもパス自体は出る"
+
+# --- ケース9: 予算が1セクション分しかないとき、残るのは「試して駄目だったこと」 ---
+# INJECT_SECTIONS の並びは §5.1 の定義順ではなく優先順位である（§6.4）。
+# 定義順に戻すと、3 つのうち失うと最も高くつくこのセクションが真っ先に落ちる。
+# 実際に 2026-08-01 の compact でそれが起きたので、回帰として固定する。
+# 3 セクションとも同程度に大きくし、貪欲な詰め方で 1 つしか入らない状況を作る。
+fill=$(printf 'あ%.0s' $(seq 900))
+cat > "$datadir/abc00005.md" <<MD
+---
+session_id: abc00005
+updated: $(date --iso-8601=seconds)
+updated_by: handoff-skill
+---
+
+## いま何をしているか
+現在地マーカー $fill
+
+## 未完了・次の一手
+次の一手マーカー $fill
+
+## 試して駄目だったこと
+失敗マーカー $fill
+MD
+
+out=$(printf '{"session_id":"abc00005","cwd":"%s","source":"compact"}' "$cwd" | bash "$SCRIPT")
+assert_contains "$out" "失敗マーカー" "予算が1つ分しか無ければ「試して駄目だったこと」が残る"
+assert_not_contains "$out" "現在地マーカー" "同条件で「いま何をしているか」は落ちる"
+assert_not_contains "$out" "次の一手マーカー" "同条件で「未完了・次の一手」は落ちる"
+assert_contains "$out" "省略: いま何をしているか、未完了・次の一手" "落とした2つを優先順位の並びで列挙する"
 
 finish
