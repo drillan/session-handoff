@@ -10,8 +10,11 @@ MAX_CHARS=1500
 
 # compact プロファイルで注入する見出し（§6.4）。
 INJECT_SECTIONS=("いま何をしているか" "未完了・次の一手" "試して駄目だったこと")
-# 注入せず、パスだけ案内する見出し。
-DEFER_SECTIONS="背景・目的／完了したこと／決定と根拠／恒久知見の候補／注意／自動追記ログ"
+# 注入しない見出しの候補（§5.1 の定義順）。実際に案内するのは、このうち
+# 引き継ぎファイルに実在するものだけに絞る（下記ループ）。存在しないセクションを
+# 「Read すること」と案内すると、無い内容を取りに行かせるか、あるものと誤信させる
+# ため（もっともらしい値で空欄を埋めない、という原則をフックの stdout にも適用する）。
+DEFER_CANDIDATES=("背景・目的" "完了したこと" "決定と根拠" "恒久知見の候補" "注意" "自動追記ログ")
 
 input=$(cat)
 session_id=$(require_field "$input" session_id)
@@ -34,8 +37,26 @@ else
   elapsed="不明"
 fi
 
-# 末尾の案内文を先に組み立て、その分を予算から差し引く。
-footer=$(printf '全文: %s\n（%s は上記ファイルを Read すること）\n' "$file" "$DEFER_SECTIONS")
+# 実在するかどうかは section() が空文字を返すかどうかで判定する。
+# 予算超過で落ちたセクションはここでは扱わない（既存の
+# 「（予算超過のため省略: <名>）」通知の役割であり、混ぜない）。
+defer_present=""
+for h in "${DEFER_CANDIDATES[@]}"; do
+  if [ -n "$(section "$file" "$h")" ]; then
+    if [ -n "$defer_present" ]; then
+      defer_present="${defer_present}／${h}"
+    else
+      defer_present="$h"
+    fi
+  fi
+done
+
+# 案内すべきセクションが1つも実在しなければ、案内行自体を出さない（空の括弧を出さない）。
+if [ -n "$defer_present" ]; then
+  footer=$(printf '全文: %s\n（%s は上記ファイルを Read すること）\n' "$file" "$defer_present")
+else
+  footer=$(printf '全文: %s\n' "$file")
+fi
 header=$(printf '[session-handoff] 引き継ぎあり（最終更新: %s / by %s）\n' "$elapsed" "$updated_by")
 
 # 予算は実際の出力形（各 printf の改行込み）と一致させる。

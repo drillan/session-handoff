@@ -87,6 +87,10 @@ assert_not_contains "$out" "uv run python を使うこと" "compact プロファ
 
 assert_contains "$out" "$datadir/abc00001.md" "全文パスを案内する"
 assert_contains "$out" "背景・目的" "省いたセクション名を案内に含める"
+# 9セクション全部を持つファイルなら、注入した3つを除く6つ全部が §5.1 の定義順で
+# 並ぶはず（レビュー指摘: 実在しないセクションを案内してはいけないが、実在するものは
+# 定義順のまま欠けずに出ること）。
+assert_contains "$out" "背景・目的／完了したこと／決定と根拠／恒久知見の候補／注意／自動追記ログ は上記ファイルを Read すること" "実在する6セクションが定義順で案内に並ぶ"
 
 # --- ケース3: 予算超過ならセクション単位で落とす ---
 # tr はバイト単位で写像するため `tr '\0' 'あ'` は不正な UTF-8 を作る。
@@ -166,5 +170,38 @@ assert_eq "$([ "$chars" -le 1500 ] && echo ok || echo "over:$chars")" "ok" "2セ
 printf '{"session_id":"cad00000","cwd":"%s","trigger":"auto"}' "$cwd" | bash "$PRE_COMPACT_SCRIPT" >/dev/null
 out=$(printf '{"session_id":"cad00000","cwd":"%s","source":"compact"}' "$cwd" | bash "$SCRIPT")
 assert_contains "$out" "⚠ /handoff を実行しないまま compact が発火した" "/handoff 未実行スタブの警告が session-start.sh の stdout に現れる"
+
+# このスタブは「## いま何をしているか」と「## 自動追記ログ」しか持たない。
+# footer の案内は「実在し、かつ注入しなかったセクション」だけを列挙すべきで、
+# 存在しない「背景・目的」「決定と根拠」等を Read せよと案内してはいけない
+# （もっともらしい値で空欄を埋めない、という原則をフック自身の stdout にも適用する）。
+assert_not_contains "$out" "背景・目的" "スタブに無いセクションを案内しない（背景・目的）"
+assert_not_contains "$out" "完了したこと" "スタブに無いセクションを案内しない（完了したこと）"
+assert_not_contains "$out" "決定と根拠" "スタブに無いセクションを案内しない（決定と根拠）"
+assert_not_contains "$out" "恒久知見の候補" "スタブに無いセクションを案内しない（恒久知見の候補）"
+assert_not_contains "$out" "注意" "スタブに無いセクションを案内しない（注意）"
+assert_contains "$out" "自動追記ログ は上記ファイルを Read すること" "スタブに実在する自動追記ログは案内に出る"
+
+# --- ケース8: 注入しなかったセクションが1つも実在しない場合、案内行自体を出さない ---
+cat > "$datadir/abc00004.md" <<MD
+---
+session_id: abc00004
+updated: $(date --iso-8601=seconds)
+updated_by: handoff-skill
+---
+
+## いま何をしているか
+現在地のみ。
+
+## 未完了・次の一手
+- [ ] 次の一手のみ。
+
+## 試して駄目だったこと
+- 失敗のみ。
+MD
+
+out=$(printf '{"session_id":"abc00004","cwd":"%s","source":"compact"}' "$cwd" | bash "$SCRIPT")
+assert_not_contains "$out" "は上記ファイルを Read すること" "案内すべきセクションが無ければ案内行自体を出さない（空の括弧を出さない）"
+assert_contains "$out" "全文: $datadir/abc00004.md" "案内行が無くてもパス自体は出る"
 
 finish
