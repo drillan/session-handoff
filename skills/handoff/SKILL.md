@@ -144,8 +144,8 @@ continues_from: <handoff-load で読み込んだ元の session_id>
 
 `continues_from` は、このセッションが `handoff-load` から始まった場合のみ書く。
 そうでなければ**項目ごと省く**。空文字や `null` を書かない。
-`handoff-load` の候補一覧がこの項目で連鎖を 1 件に畳むので、
-値の無い項目があると畳めなくなる。
+`handoff-load` の候補一覧は、この項目をたどって連鎖を追い、生きているものごとに
+1 件へ畳む。値が無いと連鎖が切れ、同じ作業が候補一覧に二重に並ぶ。
 
 `updated_by` は、読み込んだファイルが `pre-compact-hook` だった場合も含め、
 必ず `handoff-skill` に変える。この値が「意味情報が入っているのか機械ログだけなのか」の
