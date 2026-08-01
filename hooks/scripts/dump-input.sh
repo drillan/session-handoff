@@ -12,8 +12,10 @@
 #   ${CLAUDE_...} のまま  → Claude Code はこのトークンを知らない
 # と読み分けられる。環境変数として export されるかは別問題なので両方記録する。
 #
-# stdout には何も書かない。SessionStart フックの stdout はそのまま
-# コンテキストに入るため、計測が本番の挙動を汚してはならない。
+# SessionStart のときだけ stdout に目印を出す。exit 0 の stdout が
+# そのままコンテキストへ入るかを確かめるための計測であり、
+# これが成立しないと §6.3 の復元経路そのものが成り立たない。
+# PreCompact では stdout に何も書かない。
 set -euo pipefail
 
 out="${HOME}/session-handoff-dump"
@@ -36,3 +38,7 @@ cat > "${base}.stdin.json"
   printf '\n# CLAUDE で始まる環境変数の全件\n'
   env | grep '^CLAUDE' | sort || printf '（なし）\n'
 } > "${base}.env"
+
+if [ "$event" = SessionStart ]; then
+  printf 'SESSION_HANDOFF_INJECTION_PROBE_7Q2 stdout 注入の計測用。この行がコンテキストに現れれば §6.3 は成立する。\n'
+fi

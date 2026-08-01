@@ -29,6 +29,10 @@ compact（コンテキスト圧縮）が走ると、会話の詳細が要約に�
 | `${CLAUDE_PLUGIN_DATA}` = `~/.claude/plugins/data/{id}/` は更新をまたいで永続。初回参照時に作成 | 状態はここへ |
 | `${CLAUDE_PLUGIN_DATA}` は hook コマンドだけでなく skill 本文でも展開される | skill と hook がパス表現を共有できる |
 
+hook 側の「展開」については実測で補足がある。子プロセスに環境変数として export される
+ことは確認したが、`command` 文字列を Claude Code が展開しているかは判定できていない
+（単一引用符内では展開されなかった）。`command` 内では二重引用符で参照する。§11.1 を参照。
+
 ## 3. 対象範囲
 
 想定する使い方は 2 つ。どちらも運ぶものは同じ「作業状態」であり、違いは注入の場面と量だけ。
@@ -490,14 +494,98 @@ chiso 完成後もこの設計は変更不要。
 
 実装前に確認を要する。推測のまま実装しない。
 
-- `PreCompact` と `SessionStart` の stdin JSON の正確な項目名。公式ドキュメントは共通項目
-  （`session_id`・`transcript_path`・`cwd`・`hook_event_name`）と `PreCompact` の `trigger`、
-  `SessionStart` の `source` を示すが、イベントごとの完全なスキーマは未確認。
-  実装時に stdin をファイルへ落として実物を確認する
-- `${CLAUDE_PLUGIN_DATA}` の実際の展開値。`session-handoff@skills-dir` に対して
-  `~/.claude/plugins/data/session-handoff-skills-dir/` になる想定だが、実測で確認する
+- **`SessionStart` フックの stdout がコンテキストへ入ること。** §6.3 の復元経路はこれだけに
+  依存しており、まだ一度も観測していない。計測用の目印を仕込んで確認する
+- **`PreCompact` の `trigger` が自動 compact のとき何になるか。** 実測できたのは `manual` のみ。
+  自動 compact は任意に起こせない。ただし実装はこの値を分岐に使わず stdin の値をそのまま
+  ログへ書くだけなので、未実測でも誤りは生じない（§6.2）
+- **`command` 文字列に対する Claude Code 側のトークン展開の有無。** 単一引用符で囲んで渡した
+  `'${CLAUDE_PLUGIN_ROOT}'` は展開されずリテラルのまま届いた。二重引用符での展開は shell に
+  よるものと区別がつかないため、Claude Code が展開しているかは未判定。
+  設計は shell 展開のみに依存させるため、この判定は不要（11.1 の運用規則を参照）
 
 ### 11.1 検証済み（2026-08-01）
+
+#### フック入力の実測値
+
+`/compact`（手動）を 1 回起こして採取した実物。
+
+`PreCompact` の stdin JSON:
+
+```json
+{
+  "session_id": "0322f6d5-5cc1-495b-a0f1-72ba644d9013",
+  "transcript_path": "/home/driller/.claude/projects/-home-driller-repo-session-handoff/0322f6d5-....jsonl",
+  "cwd": "/home/driller/repo/session-handoff",
+  "prompt_id": "1b7b08b2-81c2-47e2-9870-e179517837ac",
+  "hook_event_name": "PreCompact",
+  "trigger": "manual",
+  "custom_instructions": null
+}
+```
+
+`SessionStart`（`matcher: compact`）の stdin JSON:
+
+```json
+{
+  "session_id": "0322f6d5-5cc1-495b-a0f1-72ba644d9013",
+  "transcript_path": "/home/driller/.claude/projects/-home-driller-repo-session-handoff/0322f6d5-....jsonl",
+  "cwd": "/home/driller/repo/session-handoff",
+  "prompt_id": "1b7b08b2-81c2-47e2-9870-e179517837ac",
+  "hook_event_name": "SessionStart",
+  "source": "compact",
+  "model": "claude-opus-5"
+}
+```
+
+読み取れること:
+
+- **`session_id` は compact をまたいで変わらない。** §6.3 が `latest` を経由せず stdin の
+  `session_id` で引き当てる設計は、この事実に支えられている。並行セッションがあっても
+  他セッションの引き継ぎを掴む余地がない
+- `custom_instructions` は `null` になりうる。`jq -r` は文字列 `"null"` を返すので、
+  この項目を使うなら `// empty` で潰す。ただし §6.2 は使わない
+- `permission_mode` は両イベントとも存在しない。あるものとして書かない
+- `PreCompact` に `trigger`／`custom_instructions`、`SessionStart` に `source`／`model` があり、
+  共通項目は `session_id`・`transcript_path`・`cwd`・`prompt_id`・`hook_event_name` の 5 つ
+- `matcher: "compact"` は意図どおり `SessionStart` を絞り込む
+
+#### 環境変数
+
+フックの子プロセスへ export される値（両イベントで同一）:
+
+```text
+CLAUDE_PLUGIN_ROOT=/home/driller/.claude/skills/session-handoff
+CLAUDE_PLUGIN_DATA=/home/driller/.claude/plugins/data/session-handoff-skills-dir
+CLAUDE_PROJECT_DIR=/home/driller/repo/session-handoff
+CLAUDE_CODE_SESSION_ID=0322f6d5-5cc1-495b-a0f1-72ba644d9013
+```
+
+- `${CLAUDE_PLUGIN_DATA}` は §4.4 の想定どおり `session-handoff-skills-dir`。
+  識別子は `<プラグイン名>-<供給元>` であって、プラグイン名そのものではない
+- **このディレクトリは Claude Code が自動生成する。** フック発火時刻に作られていた。
+  ただし中身は空なので、`<project-slug>/` は各フックが `mkdir -p` する（§6.2）
+- **運用規則: `hooks.json` の `command` 内でこれらを参照するときは二重引用符か無引用符にする。**
+  単一引用符では展開されない。展開しているのが shell なのか Claude Code なのかは
+  区別できていないが（§11）、二重引用符なら少なくとも shell が展開するので確実に動く
+- `PWD` はフック実行時 `cwd` と一致した。ただし依存せず stdin の `cwd` を使う（§6.2）
+
+#### プラグインの読み込み
+
+- **skills-dir 経由のプラグインでも `hooks/hooks.json` は読み込まれる。**
+  `/hooks` が `PreCompact (1)` を表示し、`~/.claude/settings.json` に `PreCompact` の登録は無く、
+  プラグイン・スキル配下の `hooks.json` 全件で `PreCompact` を持つのは本リポジトリの
+  1 ファイルのみだった。§4.2・§6.1 の前提は成立する
+- **フック設定はセッション起動時に確定する。** セッション途中で `hooks/hooks.json` を
+  新規作成しても、その走行中のセッションには登録されない。`/reload-skills` は
+  skill 一覧を再読み込みするだけでフックを再登録しない。反映には `claude --continue` などの
+  再起動を要する。開発中はこれを踏むので手順に含める（§6.1）
+- **`command` は単一のシェル文字列で書く。** `{"command": "bash", "args": [...]}` の形は
+  検証していない。インストール済みの実プラグイン 3 種（superpowers 6.2.0・codex 1.0.2・
+  learning-output-style 1.0.0）はいずれも `args` を持たず単一文字列を使う。
+  `claude plugin validate` が通ることは `args` 形式が動く証拠にならない
+
+#### 配置・登録（先行検証分）
 
 - **シンボリックリンク越しの skills-dir プラグイン認識は動作する。**
   `~/.claude/skills/session-handoff -> ~/repo/session-handoff` を張った状態で
