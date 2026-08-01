@@ -21,6 +21,12 @@ data_dir() {
 
 # 引き継ぎファイルのパス。
 handoff_path() { # <cwd> <session_id>
+  # session_id はパスの構成要素になる。UUID 以外が来たら黙って直さず失敗させる。
+  case "$2" in
+    ''|*[!0-9a-fA-F-]*)
+      printf 'session_id がパス構成要素として不正です: %s\n' "$2" >&2
+      return 1 ;;
+  esac
   local d
   d=$(data_dir "$1") || return 1
   printf '%s/%s.md' "$d" "$2"
@@ -69,10 +75,13 @@ section() {
 }
 
 # ISO8601 または @エポック秒 を受け取り、現在との差を日本語で返す。
-elapsed_ja() {
+# 第2引数は基準時刻（epoch秒）の省略可能な指定。フォールバックではなく、
+# 呼び出し側が基準時刻を明示できるようにするための単なる既定値（テストの決定性のため）。
+# 省略時の挙動（$(date +%s) を使う）は変わらない。
+elapsed_ja() { # <ISO8601文字列> [<基準時刻のepoch秒>]
   local then now diff
   then=$(date -d "$1" +%s)
-  now=$(date +%s)
+  now=${2:-$(date +%s)}
   diff=$((now - then))
   if [ "$diff" -lt 60 ]; then
     printf '%d秒前' "$diff"

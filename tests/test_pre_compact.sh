@@ -24,25 +24,25 @@ slug=$(printf '%s' "$repo" | sed 's#[^a-zA-Z0-9_-]#-#g')
 datadir="$CLAUDE_PLUGIN_DATA/$slug"
 
 # --- ケース1: 引き継ぎファイルが無い状態で発火する ---
-printf '{"session_id":"sess1","cwd":"%s","trigger":"auto"}' "$repo" | bash "$SCRIPT"
+printf '{"session_id":"0001","cwd":"%s","trigger":"auto"}' "$repo" | bash "$SCRIPT"
 rc=$?
 assert_status "$rc" 0 "ファイル未作成でも exit 0"
 
-file="$datadir/sess1.md"
+file="$datadir/0001.md"
 assert_eq "$([ -f "$file" ] && echo yes || echo no)" "yes" "引き継ぎファイルが新規作成される"
 
 body=$(cat "$file")
 assert_contains "$body" "⚠ /handoff 未実行のまま compact が発火" "未実行の警告が入る"
-assert_contains "$body" "session_id: sess1" "frontmatter に session_id が入る"
+assert_contains "$body" "session_id: 0001" "frontmatter に session_id が入る"
 assert_contains "$body" "updated_by: pre-compact-hook" "updated_by が hook になる"
 assert_contains "$body" "## 自動追記ログ" "自動追記ログの見出しが作られる"
 assert_contains "$body" "compact(auto)" "trigger が記録される"
 assert_contains "$body" "branch: main" "ブランチ名が記録される"
 assert_contains "$body" "a.txt" "git status の内容が記録される"
-assert_eq "$(cat "$datadir/latest")" "sess1" "latest に session_id が書かれる"
+assert_eq "$(cat "$datadir/latest")" "0001" "latest に session_id が書かれる"
 
 # --- ケース2: 同じセッションで 2 回目が発火する ---
-printf '{"session_id":"sess1","cwd":"%s","trigger":"manual"}' "$repo" | bash "$SCRIPT"
+printf '{"session_id":"0001","cwd":"%s","trigger":"manual"}' "$repo" | bash "$SCRIPT"
 body=$(cat "$file")
 assert_contains "$body" "compact(manual)" "2 回目の trigger も記録される"
 assert_eq "$(grep -c '^### ' "$file")" "2" "エントリが 2 件になる"
@@ -50,9 +50,9 @@ assert_eq "$(grep -c '^## 自動追記ログ' "$file")" "1" "自動追記ログ�
 
 # --- ケース3: /handoff が書いたファイルがある状態 ---
 mkdir -p "$datadir"
-cat > "$datadir/sess2.md" <<'MD'
+cat > "$datadir/0002.md" <<'MD'
 ---
-session_id: sess2
+session_id: 0002
 updated: 2026-08-01T10:00:00+09:00
 updated_by: handoff-skill
 ---
@@ -64,8 +64,8 @@ updated_by: handoff-skill
 
 ## 自動追記ログ
 MD
-printf '{"session_id":"sess2","cwd":"%s","trigger":"auto"}' "$repo" | bash "$SCRIPT"
-body=$(cat "$datadir/sess2.md")
+printf '{"session_id":"0002","cwd":"%s","trigger":"auto"}' "$repo" | bash "$SCRIPT"
+body=$(cat "$datadir/0002.md")
 assert_contains "$body" "## いま何をしているか" "既存の意味情報が消えない"
 assert_contains "$body" "実装中。" "既存の本文が消えない"
 assert_not_contains "$body" "⚠ /handoff 未実行" "既存ファイルには警告を足さない"
@@ -74,9 +74,9 @@ assert_contains "$body" "compact(auto)" "既存ファイルにも追記される
 # --- ケース4: git リポジトリでないディレクトリ ---
 plain="$workspace/plain"
 mkdir -p "$plain"
-printf '{"session_id":"sess3","cwd":"%s","trigger":"auto"}' "$plain" | bash "$SCRIPT"
+printf '{"session_id":"0003","cwd":"%s","trigger":"auto"}' "$plain" | bash "$SCRIPT"
 plainslug=$(printf '%s' "$plain" | sed 's#[^a-zA-Z0-9_-]#-#g')
-body=$(cat "$CLAUDE_PLUGIN_DATA/$plainslug/sess3.md")
+body=$(cat "$CLAUDE_PLUGIN_DATA/$plainslug/0003.md")
 assert_contains "$body" "not a git repository" "git でない場合はその事実を書く"
 
 # --- ケース5: 必須項目の欠落 ---
@@ -84,7 +84,7 @@ out=$(printf '{"cwd":"%s","trigger":"auto"}' "$repo" | bash "$SCRIPT" 2>&1); rc=
 assert_status "$rc" 1 "session_id 欠落で exit 1（exit 2 ではない）"
 assert_contains "$out" "session_id" "欠落した項目名を stderr に出す"
 
-out=$(printf '{"session_id":"x","cwd":"%s"}' "$repo" | bash "$SCRIPT" 2>&1); rc=$?
+out=$(printf '{"session_id":"1","cwd":"%s"}' "$repo" | bash "$SCRIPT" 2>&1); rc=$?
 assert_status "$rc" 1 "trigger 欠落で exit 1"
 
 # --- ケース6: 文法不正な JSON（jq 自身がパースエラーで非ゼロ終了する経路） ---
@@ -95,5 +95,13 @@ assert_status "$rc" 1 "trigger 欠落で exit 1"
 # グローバル制約があるため、この経路が exit 2 に化けないことを固定する。
 out=$(printf '{"session_id":"x","cwd":"%s"' "$repo" | bash "$SCRIPT" 2>&1); rc=$?
 assert_status "$rc" 1 "文法不正な JSON でも exit 1（exit 2 は compact をブロックするため不可）"
+
+# --- ケース7: session_id がパス構成要素として不正（handoff_path が拒否する経路） ---
+# file=$(handoff_path "$cwd" "$session_id") はこの検証追加により新たに失敗しうる
+# 代入文になった。これも require_field 同様、コマンド置換のサブシェル内で
+# handoff_path が明示的に return 1 するため、exit 2 には化けない。
+out=$(printf '{"session_id":"../etc/passwd","cwd":"%s","trigger":"auto"}' "$repo" | bash "$SCRIPT" 2>&1); rc=$?
+assert_status "$rc" 1 "session_id がパス脱出を試みても exit 1（exit 2 は compact をブロックするため不可）"
+assert_contains "$out" "session_id" "拒否理由が session_id であることを stderr に出す"
 
 finish

@@ -12,7 +12,7 @@ trigger=$(require_field "$input" trigger)
 
 dir=$(data_dir "$cwd")
 mkdir -p "$dir"
-file="$dir/$session_id.md"
+file=$(handoff_path "$cwd" "$session_id")
 now=$(date --iso-8601=seconds)
 
 if [ ! -f "$file" ]; then

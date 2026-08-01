@@ -24,6 +24,13 @@ out=$(unset CLAUDE_PLUGIN_DATA; handoff_path /home/driller/foo abc123 2>&1); rc=
 assert_status "$rc" 1 "handoff_path: CLAUDE_PLUGIN_DATA 未設定なら失敗する"
 assert_not_contains "$out" "abc123.md" "handoff_path: 未設定時に壊れたパスを stdout に出さない"
 
+# CLAUDE_PLUGIN_DATA を明示的に設定した状態で検査する。未設定に起因する失敗と
+# 混同しないため（未設定なら data_dir の失敗が先に立ち、検証を試したことにならない）。
+out=$(CLAUDE_PLUGIN_DATA=/tmp/pd handoff_path /home/driller/foo '../etc/passwd' 2>&1); rc=$?
+assert_status "$rc" 1 "handoff_path: パス脱出する session_id を拒否する"
+assert_contains "$out" "session_id" "handoff_path: 拒否理由が session_id であることを示す"
+assert_not_contains "$out" "passwd.md" "handoff_path: 不正時に組み立てたパスを stdout に出さない"
+
 # --- require_field ---
 json='{"session_id":"abc","cwd":"/home/driller/foo","trigger":"auto"}'
 assert_eq "$(require_field "$json" session_id)" "abc" "require_field: 値を取り出す"
@@ -71,10 +78,11 @@ assert_eq "$(section "$tmp" "存在しない見出し")" "" "section: 無い見�
 rm -f "$tmp"
 
 # --- elapsed_ja ---
-now=$(date +%s)
-assert_eq "$(elapsed_ja "@$((now - 30))")" "30秒前" "elapsed_ja: 秒"
-assert_eq "$(elapsed_ja "@$((now - 300))")" "5分前" "elapsed_ja: 分"
-assert_eq "$(elapsed_ja "@$((now - 8040))")" "2時間14分前" "elapsed_ja: 時間と分"
-assert_eq "$(elapsed_ja "@$((now - 432000))")" "5日前" "elapsed_ja: 日"
+# 基準時刻を第2引数で明示し、実時刻に一切依存しない（秒境界をまたぐ flaky を防ぐ）。
+now=1735689600
+assert_eq "$(elapsed_ja "@$((now - 30))" "$now")" "30秒前" "elapsed_ja: 秒"
+assert_eq "$(elapsed_ja "@$((now - 300))" "$now")" "5分前" "elapsed_ja: 分"
+assert_eq "$(elapsed_ja "@$((now - 8040))" "$now")" "2時間14分前" "elapsed_ja: 時間と分"
+assert_eq "$(elapsed_ja "@$((now - 432000))" "$now")" "5日前" "elapsed_ja: 日"
 
 finish
