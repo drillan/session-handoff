@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# 意図的に set -euo pipefail を置かない: source される純関数ライブラリであり、
+# 呼び出し元（test_*.sh）のシェルオプションを書き換えてはならない。
 # テスト用 assert ヘルパー。各 test_*.sh から source する。
 
 TESTS=0

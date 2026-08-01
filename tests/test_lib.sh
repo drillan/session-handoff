@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# 意図的に -e を付けない: このファイルは異常系（失敗を期待する）アサートを
+# 多数含み、-e があるとその失敗時点でスクリプトが打ち切られてしまう。
 set -uo pipefail
 HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 . "$HERE/helper.sh"
@@ -17,6 +19,10 @@ assert_contains "$out" "CLAUDE_PLUGIN_DATA" "data_dir: 未設定の理由を std
 
 # --- handoff_path ---
 assert_eq "$(CLAUDE_PLUGIN_DATA=/tmp/pd handoff_path /home/driller/foo abc123)" "/tmp/pd/-home-driller-foo/abc123.md" "handoff_path: session_id.md を付ける"
+
+out=$(unset CLAUDE_PLUGIN_DATA; handoff_path /home/driller/foo abc123 2>&1); rc=$?
+assert_status "$rc" 1 "handoff_path: CLAUDE_PLUGIN_DATA 未設定なら失敗する"
+assert_not_contains "$out" "abc123.md" "handoff_path: 未設定時に壊れたパスを stdout に出さない"
 
 # --- require_field ---
 json='{"session_id":"abc","cwd":"/home/driller/foo","trigger":"auto"}'

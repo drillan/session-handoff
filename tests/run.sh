@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-set -uo pipefail
+# -e を付けても安全: 各 test_*.sh の実行は if 条件配下（`if bash "$f"; then`）
+# にあり、-e はここでは発火しないため付けない理由がない。
+set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 
 rc=0

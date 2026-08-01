@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# 意図的に set -euo pipefail を置かない: source される純関数ライブラリであり、
+# 呼び出し元のシェルオプションを書き換えてはならない。特に -e を入れると
+# tests/test_lib.sh の「失敗を期待するアサート」の実行が途中で打ち切られる。
 # session-handoff の両フックが共有する純関数。副作用を持たない。
 
 # cwd から一意なディレクトリ名を作る。
@@ -17,11 +20,16 @@ data_dir() {
 }
 
 # 引き継ぎファイルのパス。
-handoff_path() {
-  printf '%s/%s.md' "$(data_dir "$1")" "$2"
+handoff_path() { # <cwd> <session_id>
+  local d
+  d=$(data_dir "$1") || return 1
+  printf '%s/%s.md' "$d" "$2"
 }
 
 # stdin JSON から必須項目を取り出す。欠落・空文字はエラーにする（推測で補わない）。
+# 注意: 引数の JSON 自体が構文的に不正な場合は、この関数のメッセージではなく
+# jq 自身のパースエラーが stderr に出て非ゼロ終了する（値を握りつぶして
+# 処理を続けることはないため、これは許容する）。
 require_field() {
   local value
   value=$(printf '%s' "$1" | jq -r --arg f "$2" '.[$f] // empty')
