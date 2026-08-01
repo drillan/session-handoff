@@ -494,8 +494,6 @@ chiso 完成後もこの設計は変更不要。
 
 実装前に確認を要する。推測のまま実装しない。
 
-- **`SessionStart` フックの stdout がコンテキストへ入ること。** §6.3 の復元経路はこれだけに
-  依存しており、まだ一度も観測していない。計測用の目印を仕込んで確認する
 - **`PreCompact` の `trigger` が自動 compact のとき何になるか。** 実測できたのは `manual` のみ。
   自動 compact は任意に起こせない。ただし実装はこの値を分岐に使わず stdin の値をそのまま
   ログへ書くだけなので、未実測でも誤りは生じない（§6.2）
@@ -508,7 +506,7 @@ chiso 完成後もこの設計は変更不要。
 
 #### フック入力の実測値
 
-`/compact`（手動）を 1 回起こして採取した実物。
+`/compact`（手動）を 2 回起こして採取した実物。以下は 1 回目のもの。
 
 `PreCompact` の stdin JSON:
 
@@ -549,8 +547,25 @@ chiso 完成後もこの設計は変更不要。
 - `PreCompact` に `trigger`／`custom_instructions`、`SessionStart` に `source`／`model` があり、
   共通項目は `session_id`・`transcript_path`・`cwd`・`prompt_id`・`hook_event_name` の 5 つ
 - `matcher: "compact"` は意図どおり `SessionStart` を絞り込む
+- `prompt_id` は compact ごとに変わる（2 回目は `f54acd95-...`）。同じ compact の
+  `PreCompact` と `SessionStart` では一致する。セッションの同一性判定に使ってはならない
 
-#### 環境変数
+#### stdout 注入（§6.3 の前提）
+
+2 回目の `/compact` で、`SessionStart` フックが exit 0 で書いた stdout が
+compact 直後のコンテキストに現れることを直接観測した。現れた形はこう:
+
+```text
+SessionStart:compact hook success: SESSION_HANDOFF_INJECTION_PROBE_7Q2 stdout 注入の計測用。…
+```
+
+- **§6.3 の復元経路は成立する。** `PostCompact` が注入できない以上、
+  `PreCompact`（書き出し）→ `SessionStart(compact)`（読み込み・注入）が唯一の経路であり、
+  その後半がこれで裏付けられた
+- 注入本文には `SessionStart:compact hook success: ` という接頭辞が付く。
+  したがって注入文は、それ自体が何であるかを名乗る本文にする（§6.3 の見出し行がその役割を負う）
+- 同じイベントに登録された他プラグインのフックも各々独立に注入されていた。
+  1 フック 1 メッセージであり、他フックの成否に影響されない
 
 フックの子プロセスへ export される値（両イベントで同一）:
 
