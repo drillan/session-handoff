@@ -23,17 +23,30 @@ compact の要約は「何をしたか」を残すが「何をしなかったか
 
 保存先は `${CLAUDE_PLUGIN_DATA}/<project-slug>/<session_id>.md`。
 
-`<project-slug>` と `<session_id>` は次の 1 コマンドで得る。
+必要な値は次の 1 コマンドで得る。
 
 ```bash
-printf 'session_id=%s\nslug=%s\nnow=%s\n' \
+printf 'session_id=%s\ncwd=%s\nslug=%s\n' \
   "$CLAUDE_CODE_SESSION_ID" \
-  "$(pwd | sed 's#[^a-zA-Z0-9_-]#-#g')" \
-  "$(date --iso-8601=seconds)"
+  "$(pwd)" \
+  "$(pwd | sed 's#[^a-zA-Z0-9_-]#-#g')"
 ```
 
 `sed` の置換規則は `pre-compact.sh` と同一で、同じディレクトリを指すために必要。
 自分で slug を組み立て直さず、このコマンドの出力をそのまま使う。
+
+止まるべき条件が 3 つある。いずれも推測で埋めず、そこで報告して終わる。
+
+- **`session_id=` が空、または 16 進数字とハイフン以外を含む。**
+  この値はパスの構成要素になる。`lib.sh` の `handoff_path` も同じ検査をして、
+  不正なら黙って直さず失敗させている。ここだけ緩めると `.md` という名前の
+  ファイルや、空の `latest` ができる
+- **`cwd` が、このセッションで作業してきたディレクトリと違う。**
+  Bash ツールの作業ディレクトリはセッション中の `cd` で移動し、そのまま保持される。
+  移動後に呼ぶと slug が変わり、フックが書く場所とは別ディレクトリになる
+- **subagent の中で実行されている。** `CLAUDE_CODE_SESSION_ID` がメインセッションと
+  同じ値になるかは確認されていない（仕様 §11.1）。別 session_id のファイルを
+  作りかねないので、引き継ぎはメインセッションから書く
 
 上の `${CLAUDE_PLUGIN_DATA}` が、この指示を読んでいる時点で絶対パスに展開されておらず
 `${CLAUDE_PLUGIN_DATA}` という文字列のまま見えている場合は、**そこで止めてユーザーに報告する**。
@@ -44,6 +57,9 @@ printf 'session_id=%s\nslug=%s\nnow=%s\n' \
 ### 2. 既存ファイルを読む
 
 ファイルがあれば `Read` する。無ければ新規作成。
+
+**このとき決まったファイルのパスを覚えておく。** 手順 6 で `latest` を書くときは、
+この同じパスの親ディレクトリを使う。パスをもう一度組み立て直さないこと。
 
 `## 自動追記ログ` 以降は `pre-compact.sh` の領域で、**このスキルは一切書き換えない**（読むのは可）。
 `Write` は全文を書き戻すので、`Read` で得たログをそのまま末尾に含めること。
@@ -83,6 +99,11 @@ printf 'session_id=%s\nslug=%s\nnow=%s\n' \
 
 このうち書くのは先頭 8 つ。`## 自動追記ログ` は読んだ内容をそのまま残す。
 
+**新規作成のときも、`## 注意` の後に `---` 区切りと空の `## 自動追記ログ` 見出しを必ず置く。**
+この見出しが無いと、次に `pre-compact.sh` がファイル末尾へ git の状態を追記したとき、
+それが `## 注意` セクションの内側に入る。`session-start.sh` は `^## ` で切るので、
+git のノイズが「注意」として compact 後のコンテキストに注入される。
+
 場面によって書き分けない。compact 用と新規セッション用で内容を変えたくなるが、
 分岐するのは読み込み側であって記録側ではない。常に 8 セクションすべてを埋める。
 
@@ -106,12 +127,17 @@ printf 'session_id=%s\nslug=%s\nnow=%s\n' \
 ```yaml
 ---
 session_id: <手順1で得た session_id>
-project: <cwd の絶対パス>
-updated: <手順1で得た now>
+project: <手順1で得た cwd>
+updated: <書き込み直前に採り直した時刻>
 updated_by: handoff-skill
 continues_from: <handoff-load で読み込んだ元の session_id>
 ---
 ```
+
+`updated` は `Write` の直前に `date --iso-8601=seconds` で採り直す。
+手順 1 で採った時刻を使い回すと、本文を書くのに時間がかかったぶんだけ古い値になる。
+`handoff-load` はこの値で鮮度を表示し、`session-start.sh` は経過時間を計算するので、
+ずれると「最後に書いたはずの引き継ぎが、他より古く見える」ことが起きる。
 
 `continues_from` は、このセッションが `handoff-load` から始まった場合のみ書く。
 そうでなければ**項目ごと省く**。空文字や `null` を書かない。
@@ -127,10 +153,11 @@ continues_from: <handoff-load で読み込んだ元の session_id>
 `Write` で保存する。ディレクトリが無ければ先に作る（このプロジェクトで一度も
 compact が走っていない場合、まだ存在しない）。
 
-続けて同じディレクトリの `latest` に session_id だけを書く（末尾に改行を入れない）。
+続けて `latest` に session_id だけを書く（末尾に改行を入れない）。
+書き込み先は**手順 2 で覚えたファイルパスの親ディレクトリ**で、組み立て直さない。
 
 ```bash
-printf '%s' "$CLAUDE_CODE_SESSION_ID" > <データディレクトリ>/latest
+printf '%s' "$CLAUDE_CODE_SESSION_ID" > <手順2のファイルパスの親ディレクトリ>/latest
 ```
 
 `latest` は「このプロジェクトで最後に更新された引き継ぎ」を指す。
