@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/dump-input.sh\" PreCompact"
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/dump-input.sh\" PreCompact '${CLAUDE_PLUGIN_DATA}' '${CLAUDE_PLUGIN_ROOT}'"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-start-dump.sh\" SessionStart"
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/dump-input.sh\" SessionStart '${CLAUDE_PLUGIN_DATA}' '${CLAUDE_PLUGIN_ROOT}'"
           }
         ]
       }
