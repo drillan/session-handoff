@@ -27,7 +27,10 @@ compact（コンテキスト圧縮）が走ると、会話の詳細が要約に�
 | skills ディレクトリ配下に `.claude-plugin/plugin.json` を置くと `<name>@skills-dir` として自動読込。marketplace 不要・インストール手順不要・個人スコープ | `settings.json` を汚さずに配布できる |
 | `${CLAUDE_PLUGIN_ROOT}` はプラグイン更新でパスが変わり、旧ディレクトリは約2週間で消える | 状態を置いてはいけない |
 | `${CLAUDE_PLUGIN_DATA}` = `~/.claude/plugins/data/{id}/` は更新をまたいで永続。初回参照時に作成 | 状態はここへ |
-| `${CLAUDE_PLUGIN_DATA}` は hook コマンドだけでなく skill 本文でも展開される | skill と hook がパス表現を共有できる |
+
+`${CLAUDE_PLUGIN_DATA}` を skill 本文でも使えるかは、当初この表に「確認済み」として
+含めていたが、実測していなかったため §11 へ移した。skill が使う経路については §11.1 の
+「skill から見た環境」を参照。
 
 hook 側の「展開」については実測で補足がある。子プロセスに環境変数として export される
 ことは確認したが、`command` 文字列を Claude Code が展開しているかは判定できていない
@@ -150,6 +153,8 @@ session_id 単位にする理由は、worktree による並行セッションで
 
 `latest` は `/handoff-load` が候補一覧を出すときの並び順の先頭を決めるために使う。
 新規セッションでは自分の session_id で引き当てられないため、この索引が必要になる。
+`pre-compact.sh`（6.2 節）と `/handoff`（8.2 節）の両方が書く。引き継ぎを更新しうる
+経路はこの 2 つだけで、どちらかが書き漏らすと索引が古い値を指したまま先頭に並ぶ。
 ただし並行セッションがあると「最後に更新されたもの」が意図と食い違いうるので、
 `/handoff-load` は `latest` を自動採用せず、候補として提示して人間に選ばせる（8.6 節）。
 
@@ -430,8 +435,14 @@ compact 直後はコンテキストが逼迫している。全文を注入する
    `Write` で全文を書き戻す際は、`Read` で得た自動追記ログをそのまま末尾に含める
 3. frontmatter の `updated` と `updated_by: handoff-skill` を更新。
    このセッションが `/handoff-load` で始まっていれば `continues_from` を記録する（5.2 節）
-4. `Write` で保存
+4. `Write` で保存し、同じディレクトリの `latest` に session_id を書く。
+   `latest` はフックだけでなくこのスキルも更新する。書かないと、`/handoff` 後に
+   compact を経ず新規セッションへ移った場合、`latest` が古いセッションを指したまま
+   8.6 節の候補一覧の先頭に並び、古い引き継ぎが最新に見える
 5. 更新したセクション名と、続け方の 2 択を人間に報告する（8.3 節）
+
+skill は stdin を持たないため、session_id は `CLAUDE_CODE_SESSION_ID`、
+`<project-slug>` は `pwd` から得る（11.1 節「skill から見た環境」）。
 
 ### 8.3 /handoff — 報告の形
 
@@ -525,6 +536,13 @@ chiso 完成後もこの設計は変更不要。
   `'${CLAUDE_PLUGIN_ROOT}'` は展開されずリテラルのまま届いた。二重引用符での展開は shell に
   よるものと区別がつかないため、Claude Code が展開しているかは未判定。
   設計は shell 展開のみに依存させるため、この判定は不要（11.1 の運用規則を参照）
+- **SKILL.md 本文に書いた `${CLAUDE_PLUGIN_DATA}` が、skill 読み込み時に絶対パスへ
+  展開されるか。** 当初 §2 に「確認済み」として書いていたが実測していなかった。
+  公式プラグイン `project-artifact` の SKILL.md が同じトークンを本文中でパスとして
+  使っており、書式としては正統である（弱い傍証であって実測ではない）。
+  `/handoff` はこのトークンを本文に書いたうえで、**展開されずリテラルのまま見えた場合は
+  停止して報告する**よう指示している。推測でパスを組み立てるとフックが読む場所と
+  別の場所に書き込み、引き継ぎが成立しないのに成功したように見えるため
 
 ### 11.1 検証済み（2026-08-01）
 
@@ -573,6 +591,25 @@ chiso 完成後もこの設計は変更不要。
 - `matcher: "compact"` は意図どおり `SessionStart` を絞り込む
 - `prompt_id` は compact ごとに変わる（2 回目は `f54acd95-...`）。同じ compact の
   `PreCompact` と `SessionStart` では一致する。セッションの同一性判定に使ってはならない
+
+#### skill から見た環境
+
+skill は stdin を受け取らないので、フックとは別の経路で session_id とパスを得る必要がある。
+Bash ツールの環境変数を実測した結果:
+
+| 変数 | 値 | 帰結 |
+| --- | --- | --- |
+| `CLAUDE_CODE_SESSION_ID` | `0322f6d5-...`（同時刻のフック stdin の `session_id` と一致） | skill はここから session_id を得る |
+| `CLAUDE_PLUGIN_DATA` | **未設定** | シェル経由では解決できない。`lib.sh` の `data_dir` は skill から使えない |
+| `CLAUDE_PLUGIN_ROOT` | **未設定** | 同上 |
+| `CLAUDE_PROJECT_DIR` | **未設定** | cwd は `pwd` で得る |
+
+`CLAUDE_CODE_CHILD_SESSION=1` も同時に設定されていた。この値が何を意味するかは未判定。
+`CLAUDE_CODE_SESSION_ID` の一致は**このセッションのメインループでの観測**であり、
+dispatch した subagent 内で同じ値になるかは確認していない。
+
+`<project-slug>` は `pwd | sed 's#[^a-zA-Z0-9_-]#-#g'` で得る。`lib.sh` の `project_slug`
+と同一の置換規則で、同じディレクトリを指すために一致させる必要がある。
 
 #### stdout 注入（§6.3 の前提）
 
