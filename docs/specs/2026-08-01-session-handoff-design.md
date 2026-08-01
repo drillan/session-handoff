@@ -311,7 +311,9 @@ CSV ダウンローダの再試行処理を実装中。仕様は決まったが�
 ### 8.2 手順
 
 1. `${CLAUDE_PLUGIN_DATA}/<project-slug>/<session_id>.md` を `Read`（存在すれば）
-2. 会話全体から各セクションを更新する。既存記述は消さず、古くなった項目のみ書き換える
+2. 会話全体から各セクションを更新する。既存記述は消さず、古くなった項目のみ書き換える。
+   **`## 自動追記ログ` 以降はフックの領域であり、スキルは一切書き換えない**（読むのは可）。
+   `Write` で全文を書き戻す際は、`Read` で得た自動追記ログをそのまま末尾に含める
 3. frontmatter の `updated` と `updated_by: handoff-skill` を更新
 4. `Write` で保存
 5. 更新したセクション名を人間に報告する
@@ -363,10 +365,14 @@ chiso 完成後もこの設計は変更不要。
   実装時に stdin をファイルへ落として実物を確認する
 - `${CLAUDE_PLUGIN_DATA}` の実際の展開値。`session-handoff@skills-dir` に対して
   `~/.claude/plugins/data/session-handoff-skills-dir/` になる想定だが、実測で確認する
-- **シンボリックリンク越しに skills-dir プラグインが認識されるか。** 既存のシンボリックリンクは
-  すべて素のスキルであり、`.claude-plugin/plugin.json` を持つディレクトリでの動作は
-  公式ドキュメントに記載がない。最初に検証する項目。認識されない場合は、実体を
-  `~/.claude/skills/session-handoff/` に置いてそこを git 管理する形へ切り替える
-- `${CLAUDE_PLUGIN_ROOT}` の解決先がシンボリックリンクのパス
-  （`~/.claude/skills/session-handoff/`）か実体のパス（`~/repo/session-handoff/`）か。
-  hooks.json のスクリプトパスが解決できればどちらでも支障はないが、実測で確認する
+
+### 11.1 検証済み（2026-08-01）
+
+- **シンボリックリンク越しの skills-dir プラグイン認識は動作する。**
+  `~/.claude/skills/session-handoff -> ~/repo/session-handoff` を張った状態で
+  `claude plugin list` が `session-handoff@skills-dir / Scope: user / Status: ✔ loaded` を返した。
+  §4.2 の配置は確定
+- `${CLAUDE_PLUGIN_ROOT}` はシンボリックリンク側のパス（`~/.claude/skills/session-handoff`）
+  として表示される。実体パスへの解決は行われない
+- `claude plugin validate` は `version` 未指定を警告する。commit SHA による版管理を
+  意図するなら無視してよい（公式ドキュメントが内部利用向けに推奨する形）

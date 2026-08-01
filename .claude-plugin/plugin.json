@@ -1,0 +1,5 @@
+{
+  "name": "session-handoff",
+  "description": "compact をまたいでセッションの作業状態を引き継ぐ",
+  "author": { "name": "driller" }
+}
