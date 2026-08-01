@@ -3,6 +3,7 @@ set -uo pipefail
 HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 . "$HERE/helper.sh"
 SCRIPT="$HERE/../hooks/scripts/session-start.sh"
+PRE_COMPACT_SCRIPT="$HERE/../hooks/scripts/pre-compact.sh"
 
 workspace=$(mktemp -d)
 trap 'rm -rf "$workspace"' EXIT
@@ -67,7 +68,12 @@ MD
 out=$(printf '{"session_id":"abc00001","cwd":"%s","source":"compact"}' "$cwd" | bash "$SCRIPT")
 
 assert_contains "$out" "[session-handoff] 引き継ぎあり" "ヘッダ行を出す"
-assert_contains "$out" "2時間14分前" "最終更新からの経過時間を出す"
+# 経過時間の厳密な文字列（"2時間14分前" 等）は実時刻依存であり、テスト実行のタイミングに
+# よって境界をまたぎうる（Task 3 の elapsed_ja flaky と同じ欠陥パターン）。
+# session-start.sh は elapsed_ja を内部で1引数呼び出ししており、結合テストの外から
+# 基準時刻を注入する経路が無いため、ここでは形（"時間"+数字+"分前"）だけをパターンで
+# 確認し、実時刻に依存する厳密な数値の一致は求めない。
+assert_eq "$(printf '%s' "$out" | grep -Eq '[0-9]+時間[0-9]+分前' && echo ok || echo "no-match")" "ok" "最終更新からの経過時間（時間+分前の形）を出す"
 assert_contains "$out" "handoff-skill" "updated_by を出す"
 
 assert_contains "$out" "## いま何をしているか" "compact プロファイル: いま何をしているか を注入"
@@ -151,5 +157,14 @@ MD
 out=$(printf '{"session_id":"abc00003","cwd":"%s","source":"compact"}' "$cwd" | bash "$SCRIPT")
 chars=$(printf '%s' "$out" | wc -m)
 assert_eq "$([ "$chars" -le 1500 ] && echo ok || echo "over:$chars")" "ok" "2セクションが境界付近でも 1500 文字を超えない"
+
+# --- ケース7: /handoff 未実行のスタブに対する結合テスト ---
+# pre-compact.sh が /handoff 未実行のまま作るスタブは、警告を「## いま何をしているか」の
+# 中に置く（レビュー指摘の修正）。session-start.sh の注入対象3見出しに属していれば
+# compact 直後のコンテキストへ届くはずなので、実際に pre-compact.sh を発火させてから
+# session-start.sh へ渡し、stdout に警告が現れることを結合の形で確認する。
+printf '{"session_id":"cad00000","cwd":"%s","trigger":"auto"}' "$cwd" | bash "$PRE_COMPACT_SCRIPT" >/dev/null
+out=$(printf '{"session_id":"cad00000","cwd":"%s","source":"compact"}' "$cwd" | bash "$SCRIPT")
+assert_contains "$out" "⚠ /handoff を実行しないまま compact が発火した" "/handoff 未実行スタブの警告が session-start.sh の stdout に現れる"
 
 finish

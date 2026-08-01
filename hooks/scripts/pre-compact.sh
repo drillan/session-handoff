@@ -16,6 +16,9 @@ file=$(handoff_path "$cwd" "$session_id")
 now=$(date --iso-8601=seconds)
 
 if [ ! -f "$file" ]; then
+  # 警告は「## いま何をしているか」の中に置く。session-start.sh の compact
+  # プロファイルはこの見出しを含む3見出ししか抽出しないため、素の本文に
+  # 置くと compact 直後のコンテキストへ一切届かない（レビュー指摘で発覚）。
   cat > "$file" <<HEADER
 ---
 session_id: $session_id
@@ -24,7 +27,10 @@ updated: $now
 updated_by: pre-compact-hook
 ---
 
-⚠ /handoff 未実行のまま compact が発火。以下は機械ログのみ。
+## いま何をしているか
+
+⚠ /handoff を実行しないまま compact が発火した。意味情報は記録されていない。
+下記の \`## 自動追記ログ\` にある git の状態だけが手がかり。
 
 ---
 

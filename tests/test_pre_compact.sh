@@ -32,10 +32,22 @@ file="$datadir/0001.md"
 assert_eq "$([ -f "$file" ] && echo yes || echo no)" "yes" "引き継ぎファイルが新規作成される"
 
 body=$(cat "$file")
-assert_contains "$body" "⚠ /handoff 未実行のまま compact が発火" "未実行の警告が入る"
+assert_contains "$body" "⚠ /handoff を実行しないまま compact が発火した" "未実行の警告が入る"
 assert_contains "$body" "session_id: 0001" "frontmatter に session_id が入る"
 assert_contains "$body" "updated_by: pre-compact-hook" "updated_by が hook になる"
 assert_contains "$body" "## 自動追記ログ" "自動追記ログの見出しが作られる"
+
+# 警告は「いま何をしているか」セクションの中に置く。session-start.sh の注入対象
+# 3見出しのどれにも属さないと、compact 直後のコンテキストに一切届かないため
+# （レビュー指摘）。section() と同じ抽出方法（見出しから次の「## 」直前まで）で
+# 検証する。
+now_section=$(awk '
+  $0 == "## いま何をしているか" { found = 1; print; next }
+  found && /^## / { exit }
+  found { print }
+' "$file")
+assert_contains "$now_section" "## いま何をしているか" "「いま何をしているか」見出しがスタブに存在する"
+assert_contains "$now_section" "⚠ /handoff を実行しないまま compact が発火した" "警告が「いま何をしているか」セクションの中にある"
 assert_contains "$body" "compact(auto)" "trigger が記録される"
 assert_contains "$body" "branch: main" "ブランチ名が記録される"
 assert_contains "$body" "a.txt" "git status の内容が記録される"
@@ -68,7 +80,7 @@ printf '{"session_id":"0002","cwd":"%s","trigger":"auto"}' "$repo" | bash "$SCRI
 body=$(cat "$datadir/0002.md")
 assert_contains "$body" "## いま何をしているか" "既存の意味情報が消えない"
 assert_contains "$body" "実装中。" "既存の本文が消えない"
-assert_not_contains "$body" "⚠ /handoff 未実行" "既存ファイルには警告を足さない"
+assert_not_contains "$body" "⚠ /handoff を実行しないまま" "既存ファイルには警告を足さない"
 assert_contains "$body" "compact(auto)" "既存ファイルにも追記される"
 
 # --- ケース4: git リポジトリでないディレクトリ ---
