@@ -9,6 +9,7 @@
 # 他のテストは 9 セクションの fixture を手書きしているので、SKILL.md 側で
 # 見出しが変わってもすべて緑のまま通る。この契約だけは実ファイル同士を
 # 突き合わせないと守れない。
+set -uo pipefail
 . "$(dirname -- "${BASH_SOURCE[0]}")/helper.sh"
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -57,5 +58,11 @@ fi
 assert_eq \
   "$(grep -c '^## いま何をしているか$' "$root/hooks/scripts/pre-compact.sh")" "1" \
   "pre-compact.sh のスタブが注入対象の見出しの下に警告を置く"
+
+# スタブ末尾の `## 自動追記ログ` 見出し。これが無いと以降の追記が
+# `## いま何をしているか` の内側に入り、git のノイズが警告と一緒に注入される。
+assert_eq \
+  "$(grep -c '^## 自動追記ログ$' "$root/hooks/scripts/pre-compact.sh")" "1" \
+  "pre-compact.sh のスタブが `## 自動追記ログ` 見出しを置く"
 
 finish

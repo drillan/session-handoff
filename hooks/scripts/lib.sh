@@ -83,7 +83,10 @@ elapsed_ja() { # <ISO8601文字列> [<基準時刻のepoch秒>]
   # date の失敗を検出する。代入を分けないと、失敗しても then が空になるだけで
   # rc は 0 のまま進み、$((now - then)) が空を 0 と解釈して now 全体が差分になる。
   # 「きのう」のような値から「20666日前」という、もっともらしい嘘が出る。
-  then=$(date -d "$1" +%s 2>/dev/null) || return 1
+  # date の stderr は潰さない。潰すと「updated が欠落」と「updated が壊れている」が
+  # どちらも「不明」になり、理由がどこにも残らなくなる。SessionStart が exit 0 の
+  # ときの stderr はデバッグログ行きなので、利用者に見えるノイズにはならない。
+  then=$(date -d "$1" +%s) || return 1
   [ -n "$then" ] || return 1
   now=${2:-$(date +%s)}
   diff=$((now - then))

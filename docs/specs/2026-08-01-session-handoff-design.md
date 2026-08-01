@@ -174,13 +174,18 @@ session_id 単位にする理由は、worktree による並行セッションで
 
 前半を Claude が書く意味情報、後半をフックが書く機械ログとする二層構造に固定する。
 
+`continues_from` は `/handoff-load` 経由で再開した場合のみ書く。無ければ項目ごと省く
+（5.2 節）。このブロックは書き手のテンプレートを兼ねるので、**行末コメントを書かない**。
+読み手のうち `/handoff-load` の抽出はコメントを想定しておらず、
+付いていると値が session_id と一致しなくなる。
+
 ```markdown
 ---
 session_id: 0322f6d5-5cc1-495b-a0f1-72ba644d9013
 project: /home/driller/foo
 updated: 2026-08-01T14:22:31+09:00
 updated_by: handoff-skill
-continues_from: 9f1c2ab4-...   # /handoff-load 経由で再開した場合のみ。無ければ項目ごと省く
+continues_from: 9f1c2ab4-3d5e-4c81-b0a2-77e19f3c4d61
 ---
 
 ## 背景・目的
@@ -769,6 +774,13 @@ CLAUDE_CODE_SESSION_ID=0322f6d5-5cc1-495b-a0f1-72ba644d9013
   検証していない。インストール済みの実プラグイン 3 種（superpowers 6.2.0・codex 1.0.2・
   learning-output-style 1.0.0）はいずれも `args` を持たず単一文字列を使う。
   `claude plugin validate` が通ることは `args` 形式が動く証拠にならない
+- **出荷形式（単一文字列）での実発火を観測済み。** 2026-08-01 16:50 の `/compact` で
+  transcript に `PreCompact [bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/pre-compact.sh"]
+  completed successfully` が出て、直後のコンテキストに
+  `SessionStart:compact hook success: [session-handoff] 引き継ぎあり…` が入った。
+  `${CLAUDE_PLUGIN_ROOT}` が解決され、`${CLAUDE_PLUGIN_DATA}` 配下に
+  `<session_id>.md` と `latest` が生成されることも確認した。
+  つまり `${CLAUDE_PLUGIN_ROOT}` の展開は、この形式では実際に機能している
 
 #### 配置・登録（先行検証分）
 
