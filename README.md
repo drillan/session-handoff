@@ -75,7 +75,10 @@ session_id 単位に分けてあるのは、worktree などで並行するセッ
 bash tests/run.sh
 ```
 
-bats も shellcheck も要らない。bash と git と jq だけで動く。
+bats も shellcheck も要らない。必要なのは bash・git・jq と、GNU coreutils の `date`。
+
+`date -d` と `date --iso-8601=seconds` を使っているので、**macOS の BSD date では
+経過時間の算出が動かない**。Linux 前提の実装で、他プラットフォームは検証していない。
 
 ## 設計文書
 

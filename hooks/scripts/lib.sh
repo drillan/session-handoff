@@ -80,9 +80,16 @@ section() {
 # 省略時の挙動（$(date +%s) を使う）は変わらない。
 elapsed_ja() { # <ISO8601文字列> [<基準時刻のepoch秒>]
   local then now diff
-  then=$(date -d "$1" +%s)
+  # date の失敗を検出する。代入を分けないと、失敗しても then が空になるだけで
+  # rc は 0 のまま進み、$((now - then)) が空を 0 と解釈して now 全体が差分になる。
+  # 「きのう」のような値から「20666日前」という、もっともらしい嘘が出る。
+  then=$(date -d "$1" +%s 2>/dev/null) || return 1
+  [ -n "$then" ] || return 1
   now=${2:-$(date +%s)}
   diff=$((now - then))
+  # 未来の時刻。TZ の取り違えや、date を実行せず手で書いた updated で起こる。
+  # 「-10800秒前」を出すくらいなら、算出できなかったと呼び出し側に返す。
+  [ "$diff" -ge 0 ] || return 1
   if [ "$diff" -lt 60 ]; then
     printf '%d秒前' "$diff"
   elif [ "$diff" -lt 3600 ]; then

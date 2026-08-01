@@ -31,10 +31,12 @@ updated=$(frontmatter_value "$file" updated)
 updated_by=$(frontmatter_value "$file" updated_by)
 [ -n "$updated_by" ] || updated_by="不明"
 
+# updated が欠落していても、解釈できない値でも「不明」を出して注入は続ける。
+# ここで exit すると 3 セクションごと捨てることになり、鮮度が分からないという
+# 小さな損失のために引き継ぎ全体を失う。§7 の「取得できなかった事実を書く」に従う。
+elapsed="不明"
 if [ -n "$updated" ]; then
-  elapsed=$(elapsed_ja "$updated")
-else
-  elapsed="不明"
+  elapsed=$(elapsed_ja "$updated") || elapsed="不明"
 fi
 
 # 実在するかどうかは section() が空文字を返すかどうかで判定する。

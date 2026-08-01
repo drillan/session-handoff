@@ -85,4 +85,19 @@ assert_eq "$(elapsed_ja "@$((now - 300))" "$now")" "5分前" "elapsed_ja: 分"
 assert_eq "$(elapsed_ja "@$((now - 8040))" "$now")" "2時間14分前" "elapsed_ja: 時間と分"
 assert_eq "$(elapsed_ja "@$((now - 432000))" "$now")" "5日前" "elapsed_ja: 日"
 
+# --- elapsed_ja の異常入力（最終レビュー C-1） ---
+# 直前まで、date の失敗で then が空になり $((now - then)) が now 全体を差分と
+# 解釈していた。rc=0 で「20666日前」というもっともらしい嘘が注入されていた。
+
+out=$(elapsed_ja "きのう" "$now" 2>/dev/null) && rc=0 || rc=$?
+assert_eq "$rc" "1" "elapsed_ja: 解釈できない日付は失敗する"
+assert_eq "$out" "" "elapsed_ja: 解釈できない日付では何も出力しない"
+
+out=$(elapsed_ja "" "$now" 2>/dev/null) && rc=0 || rc=$?
+assert_eq "$rc" "1" "elapsed_ja: 空文字は失敗する"
+
+out=$(elapsed_ja "@$((now + 10800))" "$now" 2>/dev/null) && rc=0 || rc=$?
+assert_eq "$rc" "1" "elapsed_ja: 未来の時刻は失敗する（負の経過時間を出さない）"
+assert_eq "$out" "" "elapsed_ja: 未来の時刻では何も出力しない"
+
 finish
