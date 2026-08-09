@@ -13,9 +13,11 @@ compact の要約は「何をしたか」を残すが「何をしなかったか
 ## 導入
 
 ```bash
-git clone <url> ~/repo/session-handoff
+git clone git@github.com:drillan/session-handoff.git ~/repo/session-handoff
 ln -s ~/repo/session-handoff ~/.claude/skills/session-handoff
 ```
+
+clone 先はどこでもよい。効いているのは 2 行目の `~/.claude/skills/` へのシンボリックリンクのほう。
 
 次回セッションから `session-handoff@skills-dir` として自動で読み込まれる。
 marketplace への登録も `settings.json` の編集も要らない。

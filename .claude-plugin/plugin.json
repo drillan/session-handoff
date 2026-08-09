@@ -1,5 +1,9 @@
 {
   "name": "session-handoff",
   "description": "compact をまたいで、および新規セッションへ、作業状態を引き継ぐ",
-  "author": { "name": "driller" }
+  "version": "0.1.0",
+  "author": { "name": "driller" },
+  "homepage": "https://github.com/drillan/session-handoff",
+  "repository": "https://github.com/drillan/session-handoff",
+  "keywords": ["compact", "handoff", "session", "context", "hooks", "skills"]
 }
