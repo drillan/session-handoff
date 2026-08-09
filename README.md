@@ -13,7 +13,7 @@ compact の要約は「何をしたか」を残すが「何をしなかったか
 ## 導入
 
 ```bash
-git clone git@github.com:drillan/session-handoff.git ~/repo/session-handoff
+git clone https://github.com/drillan/session-handoff.git ~/repo/session-handoff
 ln -s ~/repo/session-handoff ~/.claude/skills/session-handoff
 ```
 
